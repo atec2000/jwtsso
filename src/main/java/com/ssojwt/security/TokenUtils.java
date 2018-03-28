@@ -1,18 +1,26 @@
 package com.ssojwt.security;
 
 import com.ssojwt.model.security.SpringUserDetails;
-import io.jsonwebtoken.*;
+import org.jose4j.jwe.ContentEncryptionAlgorithmIdentifiers;
+import org.jose4j.jwe.JsonWebEncryption;
+import org.jose4j.jwe.KeyManagementAlgorithmIdentifiers;
+import org.jose4j.jwk.JsonWebKey;
+import org.jose4j.jws.AlgorithmIdentifiers;
+import org.jose4j.jws.JsonWebSignature;
+import org.jose4j.jwt.JwtClaims;
 
-import java.io.UnsupportedEncodingException;
+import java.util.*;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-
+import org.jose4j.jwt.MalformedClaimException;
+import org.jose4j.jwt.NumericDate;
+import org.jose4j.jwt.consumer.InvalidJwtException;
+import org.jose4j.jwt.consumer.JwtConsumer;
+import org.jose4j.jwt.consumer.JwtConsumerBuilder;
+import org.jose4j.lang.JoseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mobile.device.Device;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
@@ -28,80 +36,27 @@ public class TokenUtils {
 
     private final String secret = "sssshhhh!";
 
+    private final String issuer = "com.ssojwt.security";
+
+
     private Long expiration = 604800l;
 
-    public String getUsernameFromToken(String token) {
-        String username;
+    static JsonWebKey jwKey = null;
+
+    static {
+        // Setting up Direct Symmetric Encryption and Decryption
+        String jwkJson = "{\"kty\":\"oct\", \"k\":\"9d6722d6-b45c-4dcb-bd73-2e057c44eb93-928390\"}";
         try {
-            final Claims claims = this.getClaimsFromToken(token);
-            username = claims.getSubject();
-        } catch (Exception e) {
-            username = null;
+            new JsonWebKey.Factory();
+            jwKey = JsonWebKey.Factory.newJwk(jwkJson);
+        } catch (JoseException e) {
+            e.printStackTrace();
         }
-        return username;
     }
 
-    public Date getCreatedDateFromToken(String token) {
-        Date created;
-        try {
-            final Claims claims = this.getClaimsFromToken(token);
-            created = new Date((Long) claims.get("created"));
-        } catch (Exception e) {
-            created = null;
-        }
-        return created;
-    }
-
-    public Date getExpirationDateFromToken(String token) {
-        Date expiration;
-        try {
-            final Claims claims = this.getClaimsFromToken(token);
-            expiration = claims.getExpiration();
-        } catch (Exception e) {
-            expiration = null;
-        }
-        return expiration;
-    }
-
-    public String getAudienceFromToken(String token) {
-        String audience;
-        try {
-            final Claims claims = this.getClaimsFromToken(token);
-            audience = (String) claims.get("audience");
-        } catch (Exception e) {
-            audience = null;
-        }
-        return audience;
-    }
-
-    private Claims getClaimsFromToken(String token) {
-        Claims claims;
-        try {
-            claims = Jwts.parser()
-                    .setSigningKey(this.secret.getBytes("UTF-8"))
-                    .parseClaimsJws(token)
-                    .getBody();
-        } catch (Exception e) {
-            claims = null;
-        }
-        return claims;
-    }
-
-    private Date generateCurrentDate() {
-        return new Date(System.currentTimeMillis());
-    }
-
-    private Date generateExpirationDate() {
-        return new Date(System.currentTimeMillis() + this.expiration * 1000);
-    }
-
-    private Boolean isTokenExpired(String token) {
-        final Date expiration = this.getExpirationDateFromToken(token);
-        return expiration.before(this.generateCurrentDate());
-    }
-
-    private Boolean isCreatedBeforeLastPasswordReset(Date created, Date lastPasswordReset) {
-        return (lastPasswordReset != null && created.before(lastPasswordReset));
+    private NumericDate generateExpirationDate() {
+        return NumericDate.fromMilliseconds(System.currentTimeMillis() + this.expiration * 1000);
+        //return new Date(System.currentTimeMillis() + this.expiration * 1000);
     }
 
     private String generateAudience(Device device) {
@@ -116,60 +71,111 @@ public class TokenUtils {
         return audience;
     }
 
-    private Boolean ignoreTokenExpiration(String token) {
-        String audience = this.getAudienceFromToken(token);
-        return (this.AUDIENCE_TABLET.equals(audience) || this.AUDIENCE_MOBILE.equals(audience));
-    }
-
     public String generateToken(UserDetails userDetails, Device device) {
-        Map<String, Object> claims = new HashMap<String, Object>();
-        claims.put("sub", userDetails.getUsername());
-        claims.put("audience", this.generateAudience(device));
-        claims.put("created", this.generateCurrentDate());
-        return this.generateToken(claims);
-    }
+        JwtClaims claims = new JwtClaims();
+        claims.setIssuer(this.issuer);
+        claims.setExpirationTime(generateExpirationDate());
+        claims.setGeneratedJwtId();
+        claims.setNotBeforeMinutesInThePast(2);
+        claims.setSubject(userDetails.getUsername());
+        //claims.setAudience(generateAudience(device));
+        claims.setAudience("audience");
+        claims.setIssuedAtToNow();
 
-    private String generateToken(Map<String, Object> claims) {
-        try {
-            return Jwts.builder()
-                    .setClaims(claims)
-                    .setExpiration(this.generateExpirationDate())
-                    .signWith(SignatureAlgorithm.HS512, this.secret.getBytes("UTF-8"))
-                    .compact();
-        } catch (UnsupportedEncodingException ex) {
-            //didn't want to have this method throw the exception, would rather log it and sign the token like it was before
-            logger.warn(ex.getMessage());
-            return Jwts.builder()
-                    .setClaims(claims)
-                    .setExpiration(this.generateExpirationDate())
-                    .signWith(SignatureAlgorithm.HS512, this.secret)
-                    .compact();
+        Collection<SimpleGrantedAuthority> grantedAuthorities = (Collection<SimpleGrantedAuthority>)userDetails.getAuthorities();
+        List<String> authorities = new ArrayList<String>();
+        for (SimpleGrantedAuthority grantedAuthority : grantedAuthorities) {
+            authorities.add(grantedAuthority.getAuthority());
         }
-    }
+        claims.setStringListClaim("authorities", authorities);
+        claims.setStringClaim("uid", userDetails.getUsername());
 
-    public Boolean canTokenBeRefreshed(String token, Date lastPasswordReset) {
-        final Date created = this.getCreatedDateFromToken(token);
-        return (!(this.isCreatedBeforeLastPasswordReset(created, lastPasswordReset)) && (!(this.isTokenExpired(token)) || this.ignoreTokenExpiration(token)));
-    }
+        JsonWebSignature jws = new JsonWebSignature();
 
-    public String refreshToken(String token) {
-        String refreshedToken;
+        logger.info("Claims => " + claims.toJson());
+        // The payload of the JWS is JSON content of the JWT Claims
+        jws.setPayload(claims.toJson());
+        jws.setKeyIdHeaderValue(jwKey.getKeyId());
+        jws.setKey(jwKey.getKey());
+
+        jws.setAlgorithmHeaderValue(AlgorithmIdentifiers.HMAC_SHA256);
+
+        String jwt = null;
         try {
-            final Claims claims = this.getClaimsFromToken(token);
-            claims.put("created", this.generateCurrentDate());
-            refreshedToken = this.generateToken(claims);
-        } catch (Exception e) {
-            refreshedToken = null;
+            jwt = jws.getCompactSerialization();
+        } catch (JoseException e) {
+            e.printStackTrace();
         }
-        return refreshedToken;
+
+        JsonWebEncryption jwe = new JsonWebEncryption();
+        jwe.setAlgorithmHeaderValue(KeyManagementAlgorithmIdentifiers.DIRECT);
+        jwe.setEncryptionMethodHeaderParameter(ContentEncryptionAlgorithmIdentifiers.AES_128_CBC_HMAC_SHA_256);
+        jwe.setKey(jwKey.getKey());
+        jwe.setKeyIdHeaderValue(jwKey.getKeyId());
+        jwe.setContentTypeHeaderValue("JWT");
+        jwe.setPayload(jwt);
+
+        String jweSerialization = null;
+        try {
+            jweSerialization = jwe.getCompactSerialization();
+        } catch (JoseException e) {
+            e.printStackTrace();
+        }
+
+        return jweSerialization;
     }
 
-    public Boolean validateToken(String token, UserDetails userDetails) {
+    public JwtClaims getClaimsFromToken(String token) throws InvalidJwtException {
+        JwtConsumer jwtConsumer = new JwtConsumerBuilder()
+                .setRequireExpirationTime()
+                .setAllowedClockSkewInSeconds(30)
+                .setRequireSubject()
+                .setExpectedAudience("audience")
+                .setExpectedIssuer(this.issuer)
+                .setDecryptionKey(jwKey.getKey())
+                .setVerificationKey(jwKey.getKey()).build();
+        return  jwtConsumer.processToClaims(token);
+    }
+
+    public String getUsernameFromClaims(JwtClaims claims) throws MalformedClaimException {
+        return claims.getStringClaimValue("uid");
+    }
+
+    public Date getExpirationDateFromClaims(JwtClaims claims) throws MalformedClaimException {
+        return new Date(claims.getExpirationTime().getValueInMillis());
+    }
+
+    public Date getIssuedAtFromClaims(JwtClaims claims) throws MalformedClaimException {
+        return new Date(claims.getIssuedAt().getValueInMillis());
+    }
+
+    private Boolean isIssuedBeforeLastPasswordReset(Date issuedAt, Date lastPasswordReset) {
+        return (lastPasswordReset != null && issuedAt.before(lastPasswordReset));
+    }
+
+    private Boolean isTokenExpired(JwtClaims claims) throws MalformedClaimException {
+        final Date expiration = this.getExpirationDateFromClaims(claims);
+        return expiration.before(new Date());
+    }
+
+    private Boolean ignoreTokenExpiration(JwtClaims claims) throws MalformedClaimException {
+        List<String> audiences = claims.getAudience();
+        return (audiences.contains(this.AUDIENCE_MOBILE) || audiences.contains(this.AUDIENCE_TABLET));
+    }
+
+    public Boolean canTokenBeRefreshed(JwtClaims claims, Date lastPasswordReset) throws MalformedClaimException {
+        Date issuedAt = new Date(claims.getIssuedAt().getValueInMillis());
+        return (
+                !(this.isIssuedBeforeLastPasswordReset(issuedAt, lastPasswordReset))
+                        && (!(this.isTokenExpired(claims)) || this.ignoreTokenExpiration(claims))
+        );
+    }
+
+    public Boolean validateToken(JwtClaims claims, UserDetails userDetails) throws MalformedClaimException {
         SpringUserDetails springUserDetails = (SpringUserDetails) userDetails;
-        final String username = this.getUsernameFromToken(token);
-        final Date created = this.getCreatedDateFromToken(token);
-        final Date expiration = this.getExpirationDateFromToken(token);
-        return (username.equals(springUserDetails.getUsername()) && !(this.isTokenExpired(token)) && !(this.isCreatedBeforeLastPasswordReset(created, springUserDetails.getLastPasswordReset())));
+        final String username = this.getUsernameFromClaims(claims);
+        final Date issuedAt = this.getIssuedAtFromClaims(claims);
+        return (username.equals(springUserDetails.getUsername()) && !(this.isTokenExpired(claims)) && !(this.isIssuedBeforeLastPasswordReset(issuedAt, springUserDetails.getLastPasswordReset())));
     }
 
 }

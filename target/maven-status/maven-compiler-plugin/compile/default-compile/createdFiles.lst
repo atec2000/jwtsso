@@ -1,10 +1,12 @@
 com/ssojwt/model/factory/SpringUserDetailsFactory.class
 com/ssojwt/service/SecurityService.class
+com/ssojwt/security/TokenUtilsJjwt.class
 com/ssojwt/model/base/ModelBase.class
 com/ssojwt/security/EntryPointUnauthorizedHandler.class
 com/ssojwt/domain/entity/User.class
 com/ssojwt/controller/AuthenticationController.class
 com/ssojwt/service/impl/SecurityServiceImpl.class
+com/ssojwt/controller/ProtectedController.class
 com/ssojwt/configuration/WebSecurityConfiguration.class
 com/ssojwt/configuration/CorsFilter.class
 com/ssojwt/configuration/WebMvcConfiguration.class

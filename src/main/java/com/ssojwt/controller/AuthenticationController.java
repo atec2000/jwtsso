@@ -7,17 +7,14 @@ import com.ssojwt.security.TokenUtils;
 
 import javax.servlet.http.HttpServletRequest;
 
+import org.jose4j.jwt.JwtClaims;
+import org.jose4j.jwt.MalformedClaimException;
+import org.jose4j.jwt.consumer.InvalidJwtException;
 import org.springframework.mobile.device.Device;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
-import org.springframework.mobile.device.Device;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -59,12 +56,17 @@ public class AuthenticationController {
     }
 
     @RequestMapping(value = "refresh", method = RequestMethod.GET)
-    public ResponseEntity<?> authenticationRequest(HttpServletRequest request) {
+    public ResponseEntity<?> authenticationRequest(HttpServletRequest request)
+            throws InvalidJwtException, MalformedClaimException {
+        Device device = (Device) request.getAttribute("currentDevice");
+
         String token = request.getHeader(this.tokenHeader);
-        String username = this.tokenUtils.getUsernameFromToken(token);
+        JwtClaims claims = this.tokenUtils.getClaimsFromToken(token);
+        String username = this.tokenUtils.getUsernameFromClaims(claims);
+
         SpringUserDetails springUserDetails = (SpringUserDetails) this.userDetailsService.loadUserByUsername(username);
-        if (this.tokenUtils.canTokenBeRefreshed(token, springUserDetails.getLastPasswordReset())) {
-            String refreshedToken = this.tokenUtils.refreshToken(token);
+        if (this.tokenUtils.canTokenBeRefreshed(claims, springUserDetails.getLastPasswordReset())) {
+            String refreshedToken = this.tokenUtils.generateToken(springUserDetails, device);
             return ResponseEntity.ok(new AuthenticationResponse(refreshedToken));
         } else {
             return ResponseEntity.badRequest().body(null);
