@@ -59,6 +59,7 @@ public class TokenUtils {
         //return new Date(System.currentTimeMillis() + this.expiration * 1000);
     }
 
+    /*
     private String generateAudience(Device device) {
         String audience = this.AUDIENCE_UNKNOWN;
         if (device.isNormal()) {
@@ -70,8 +71,9 @@ public class TokenUtils {
         }
         return audience;
     }
+    */
 
-    public String generateToken(UserDetails userDetails, Device device) {
+    public String generateToken(UserDetails userDetails) {
         JwtClaims claims = new JwtClaims();
         claims.setIssuer(this.issuer);
         claims.setExpirationTime(generateExpirationDate());

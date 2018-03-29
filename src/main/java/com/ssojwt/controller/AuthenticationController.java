@@ -43,13 +43,13 @@ public class AuthenticationController {
             @RequestBody AuthenticationRequest authenticationRequest,
             HttpServletRequest request) throws AuthenticationException {
 
-        Device device = (Device) request.getAttribute("currentDevice");
+        //Device device = (Device) request.getAttribute("currentDevice");
 
         // Perform the authentication
 
         // Reload password post-authentication so we can generate token
         UserDetails userDetails = this.userDetailsService.loadUserByUsername(authenticationRequest.getUsername());
-        String token = this.tokenUtils.generateToken(userDetails, device);
+        String token = this.tokenUtils.generateToken(userDetails);
 
         // Return the token
         return ResponseEntity.ok(new AuthenticationResponse(token));
@@ -58,7 +58,7 @@ public class AuthenticationController {
     @RequestMapping(value = "refresh", method = RequestMethod.GET)
     public ResponseEntity<?> authenticationRequest(HttpServletRequest request)
             throws InvalidJwtException, MalformedClaimException {
-        Device device = (Device) request.getAttribute("currentDevice");
+        //Device device = (Device) request.getAttribute("currentDevice");
 
         String token = request.getHeader(this.tokenHeader);
         JwtClaims claims = this.tokenUtils.getClaimsFromToken(token);
@@ -66,7 +66,7 @@ public class AuthenticationController {
 
         SpringUserDetails springUserDetails = (SpringUserDetails) this.userDetailsService.loadUserByUsername(username);
         if (this.tokenUtils.canTokenBeRefreshed(claims, springUserDetails.getLastPasswordReset())) {
-            String refreshedToken = this.tokenUtils.generateToken(springUserDetails, device);
+            String refreshedToken = this.tokenUtils.generateToken(springUserDetails);
             return ResponseEntity.ok(new AuthenticationResponse(refreshedToken));
         } else {
             return ResponseEntity.badRequest().body(null);
